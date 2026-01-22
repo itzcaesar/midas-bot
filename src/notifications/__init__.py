@@ -1,6 +1,6 @@
 """
 Notifications Module
 """
-from .telegram_bot import TelegramNotifier
+from .telegram import TelegramNotifier
 
 __all__ = ['TelegramNotifier']

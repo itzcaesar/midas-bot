@@ -363,7 +363,7 @@ def add_candle_patterns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def add_all_advanced_indicators(df: pd.DataFrame) -> pd.DataFrame:
+def add_all_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """
     Add all advanced technical indicators.
     """

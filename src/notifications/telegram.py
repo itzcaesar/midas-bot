@@ -31,7 +31,7 @@ class TelegramNotifier:
     1. Create a bot via @BotFather on Telegram
     2. Get your bot token
     3. Start a chat with your bot and get the chat ID
-    4. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env
+    4. Set telegram_TOKEN and TELEGRAM_CHAT_ID in .env
     """
     
     def __init__(self, token: str = None, chat_id: str = None):
@@ -39,10 +39,10 @@ class TelegramNotifier:
         Initialize Telegram notifier.
         
         Args:
-            token: Telegram bot token (or uses settings.telegram_bot_token)
+            token: Telegram bot token (or uses settings.telegram_token)
             chat_id: Telegram chat ID (or uses settings.telegram_chat_id)
         """
-        self.token = token or settings.telegram_bot_token
+        self.token = token or settings.telegram_token
         self.chat_id = chat_id or settings.telegram_chat_id
         self.bot = None
         self._enabled = False

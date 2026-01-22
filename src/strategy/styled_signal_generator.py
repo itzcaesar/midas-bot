@@ -10,10 +10,10 @@ from dataclasses import dataclass
 
 sys.path.insert(0, str(__file__).replace('\\', '/').rsplit('/', 2)[0])
 
-from ml.kaggle_loader import KaggleDataLoader
-from ml.feature_engineering import FeatureEngineer
+from ml.data_loader import KaggleDataLoader
+from ml.features import FeatureEngineer
 from ml.models import RandomForestModel, LogisticRegressionModel, GradientBoostingModel, ModelEnsemble
-from strategy.trading_styles import TradingStyle, StyleConfig, get_style_config, get_all_styles
+from strategy.styles import TradingStyle, StyleConfig, get_style_config, get_all_styles
 from core.logger import get_logger
 
 logger = get_logger("mt5bot.style_signal")

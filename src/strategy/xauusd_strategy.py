@@ -47,18 +47,18 @@ class XAUUSDStrategy:
     7. [NEW] No high-impact news
     """
     
-    def __init__(self, mt5_manager=None):
+    def __init__(self, mt5=None):
         """
         Initialize strategy.
         
         Args:
-            mt5_manager: Optional MT5Manager instance for MTF data
+            mt5: Optional MT5Manager instance for MTF data
         """
         self.min_factors = settings.min_factors
         self.consolidation_state = {'active': False, 'high': 0, 'low': 0}
         
         # Initialize filters
-        self.mtf_analyzer = MultiTimeframeAnalyzer(mt5_manager)
+        self.mtf_analyzer = MultiTimeframeAnalyzer(mt5)
         self.session_filter = SessionFilter()
         self.news_filter = NewsFilter()
         

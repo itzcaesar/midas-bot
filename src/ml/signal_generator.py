@@ -13,8 +13,8 @@ from pathlib import Path
 
 from config import settings
 from core.logger import get_logger
-from ml.kaggle_loader import KaggleDataLoader
-from ml.feature_engineering import FeatureEngineer
+from ml.data_loader import KaggleDataLoader
+from ml.features import FeatureEngineer
 from ml.models import (
     LogisticRegressionModel, RandomForestModel, 
     XGBoostModel, GradientBoostingModel, ModelEnsemble
@@ -369,7 +369,7 @@ def run_signal_pipeline(
     
     # Send to Discord
     if send_to_discord and signal.direction != 'HOLD':
-        from notifications.discord_bot import DiscordNotifier
+        from notifications.discord import DiscordNotifier
         notifier = DiscordNotifier(discord_webhook_url)
         notifier.send_signal(
             direction=signal.direction,

@@ -45,7 +45,7 @@ class StyleConfig:
 
 
 # Pre-configured trading styles
-TRADING_STYLES: Dict[TradingStyle, StyleConfig] = {
+styles: Dict[TradingStyle, StyleConfig] = {
     
     TradingStyle.SCALPING: StyleConfig(
         name="Scalping",
@@ -137,14 +137,14 @@ def get_style_config(style: str) -> StyleConfig:
     """
     try:
         trading_style = TradingStyle(style.lower())
-        return TRADING_STYLES[trading_style]
+        return styles[trading_style]
     except (ValueError, KeyError):
         raise ValueError(f"Unknown trading style: {style}. Valid options: {[s.value for s in TradingStyle]}")
 
 
 def get_all_styles() -> Dict[str, StyleConfig]:
     """Get all available trading styles."""
-    return {style.value: config for style, config in TRADING_STYLES.items()}
+    return {style.value: config for style, config in styles.items()}
 
 
 def print_style_info(style: str = None):
@@ -184,4 +184,4 @@ TIMEFRAME_STYLE_MAP = {
 def get_style_for_timeframe(timeframe: str) -> StyleConfig:
     """Automatically select trading style based on timeframe."""
     style = TIMEFRAME_STYLE_MAP.get(timeframe, TradingStyle.SWING)
-    return TRADING_STYLES[style]
+    return styles[style]

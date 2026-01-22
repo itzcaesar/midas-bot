@@ -43,14 +43,14 @@ class MultiTimeframeAnalyzer:
         "W1": 10080,
     }
     
-    def __init__(self, mt5_manager=None):
+    def __init__(self, mt5=None):
         """
         Initialize MTF analyzer.
         
         Args:
-            mt5_manager: Optional MT5Manager instance for fetching HTF data
+            mt5: Optional MT5Manager instance for fetching HTF data
         """
-        self.mt5 = mt5_manager
+        self.mt5 = mt5
     
     def get_htf_for_ltf(self, ltf: str) -> Optional[str]:
         """Get the corresponding higher timeframe for a lower timeframe."""

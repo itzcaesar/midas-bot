@@ -16,10 +16,10 @@ from config import settings
 from core.logger import setup_logger, TradeLogger
 from core.database import Database
 from core.exceptions import ConnectionError, OrderError
-from broker.mt5_manager import MT5Manager
+from broker.mt5 import MT5Manager
 from strategy.xauusd_strategy import XAUUSDStrategy
 from analysis import dxy
-from notifications.telegram_bot import TelegramNotifier
+from notifications.telegram import TelegramNotifier
 
 # Setup main logger
 logger = setup_logger("mt5bot.main", log_dir=settings.log_dir)
@@ -72,7 +72,7 @@ def main():
         return
     
     # Initialize strategy with MT5 reference for HTF data
-    strategy = XAUUSDStrategy(mt5_manager=mt5)
+    strategy = XAUUSDStrategy(mt5=mt5)
     
     # Send startup notification
     if notifier.is_enabled:

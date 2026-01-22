@@ -60,8 +60,8 @@ class FeatureEngineer:
         
         # Advanced indicators
         if include_advanced:
-            from ml.advanced_indicators import add_all_advanced_indicators
-            df = add_all_advanced_indicators(df)
+            from ml.indicators import add_all_indicators
+            df = add_all_indicators(df)
         
         # Lag features
         if include_lags:

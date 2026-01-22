@@ -14,8 +14,8 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 
-from ml.kaggle_loader import KaggleDataLoader
-from ml.feature_engineering import FeatureEngineer, prepare_ml_data
+from ml.data_loader import KaggleDataLoader
+from ml.features import FeatureEngineer, prepare_ml_data
 from ml.models import train_all_models, RandomForestModel
 from core.logger import get_logger
 
