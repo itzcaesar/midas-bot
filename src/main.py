@@ -3,7 +3,7 @@ XAUUSD Trading Bot - Main Entry Point
 Enhanced with logging, notifications, database persistence, and advanced filters.
 """
 import time
-import sys
+
 from datetime import datetime
 from pathlib import Path
 

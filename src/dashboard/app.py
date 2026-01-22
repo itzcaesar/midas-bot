@@ -4,7 +4,7 @@ Real-time monitoring dashboard using Streamlit.
 
 Run with: streamlit run src/dashboard/app.py
 """
-import sys
+
 from pathlib import Path
 
 # Add project root to path

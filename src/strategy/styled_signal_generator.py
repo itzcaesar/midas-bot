@@ -7,7 +7,7 @@ import pandas as pd
 from datetime import datetime
 from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
-import sys
+
 sys.path.insert(0, str(__file__).replace('\\', '/').rsplit('/', 2)[0])
 
 from ml.kaggle_loader import KaggleDataLoader

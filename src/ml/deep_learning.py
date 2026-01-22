@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional
 from pathlib import Path
-import sys
-sys.path.append('../..')
+
+
 
 from core.logger import get_logger
 

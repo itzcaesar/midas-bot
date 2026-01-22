@@ -5,8 +5,8 @@ Avoid trading during high-impact economic news events.
 import json
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
-import sys
-sys.path.append('../..')
+
+
 
 from config import settings
 from core.logger import get_logger

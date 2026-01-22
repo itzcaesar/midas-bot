@@ -5,8 +5,8 @@ Send trading signals to Discord via webhook.
 import json
 from datetime import datetime
 from typing import Optional, Dict, List
-import sys
-sys.path.append('../..')
+
+
 
 from core.logger import get_logger
 

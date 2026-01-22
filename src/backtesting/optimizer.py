@@ -8,8 +8,8 @@ from itertools import product
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass
 import copy
-import sys
-sys.path.append('../..')
+
+
 
 from config import settings
 from core.logger import get_logger

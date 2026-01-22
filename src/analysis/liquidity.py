@@ -4,8 +4,8 @@ Liquidity Analysis - Swing Points, Liquidity Pools, and Sweep Detection
 import pandas as pd
 import numpy as np
 from typing import List, Tuple, Optional
-import sys
-sys.path.append('../..')
+
+
 from config import settings
 
 

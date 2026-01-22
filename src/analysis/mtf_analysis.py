@@ -4,8 +4,8 @@ Provides higher timeframe (HTF) bias confirmation for trading decisions.
 """
 import pandas as pd
 from typing import Optional, Tuple
-import sys
-sys.path.append('../..')
+
+
 
 from config import settings
 from core.logger import get_logger

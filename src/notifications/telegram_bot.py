@@ -5,8 +5,8 @@ Send trade alerts, signals, and daily summaries via Telegram.
 import asyncio
 from datetime import datetime
 from typing import Optional, Dict, List
-import sys
-sys.path.append('../..')
+
+
 
 from config import settings
 from core.logger import get_logger

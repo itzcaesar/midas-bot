@@ -6,8 +6,8 @@ Combines: Liquidity, MACD, Breakout/Consolidation, Price Structure, DXY Correlat
 import pandas as pd
 from typing import Optional, Tuple
 from dataclasses import dataclass, field
-import sys
-sys.path.append('..')
+
+
 
 from config import settings
 from core.logger import get_logger

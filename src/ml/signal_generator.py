@@ -8,8 +8,8 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
-import sys
-sys.path.append('../..')
+
+
 
 from config import settings
 from core.logger import get_logger

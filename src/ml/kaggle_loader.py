@@ -8,8 +8,8 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Tuple
-import sys
-sys.path.append('../..')
+
+
 
 from core.logger import get_logger
 

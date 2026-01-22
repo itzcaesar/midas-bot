@@ -7,8 +7,8 @@ import numpy as np
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple, Callable
 from dataclasses import dataclass, field
-import sys
-sys.path.append('../..')
+
+
 
 from config import settings
 from core.logger import get_logger

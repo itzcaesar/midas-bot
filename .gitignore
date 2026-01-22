@@ -73,3 +73,9 @@ htmlcov/
 # Distribution
 *.tar.gz
 *.whl
+
+# Data files
+data/*.csv
+data/*.zip
+*.csv
+!.env.example

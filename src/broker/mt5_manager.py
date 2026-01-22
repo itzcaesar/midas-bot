@@ -6,8 +6,8 @@ import MetaTrader5 as mt5
 import pandas as pd
 from datetime import datetime
 from typing import Optional, Tuple
-import sys
-sys.path.append('..')
+
+
 
 from config import settings
 from core.logger import get_logger

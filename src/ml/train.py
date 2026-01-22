@@ -2,7 +2,7 @@
 ML Training Script - GPU Optimized
 Train ML models on XAUUSD Kaggle data.
 """
-import sys
+
 from pathlib import Path
 
 # Add paths

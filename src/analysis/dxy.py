@@ -4,8 +4,8 @@ DXY Correlation Analysis - USD Index correlation with XAUUSD
 import pandas as pd
 import numpy as np
 from typing import Optional, Tuple
-import sys
-sys.path.append('../..')
+
+
 from config import settings
 
 # Optional: fallback to yfinance if DXY not available on MT5

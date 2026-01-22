@@ -4,8 +4,8 @@ Filter trades based on market sessions for optimal liquidity and volatility.
 """
 from datetime import datetime, time, timedelta
 from typing import Tuple, List, Optional
-import sys
-sys.path.append('../..')
+
+
 
 from config import settings
 from core.logger import get_logger

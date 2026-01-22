@@ -8,8 +8,8 @@ from typing import Dict, List, Optional, Tuple, Any
 from abc import ABC, abstractmethod
 from pathlib import Path
 import joblib
-import sys
-sys.path.append('../..')
+
+
 
 from core.logger import get_logger
 

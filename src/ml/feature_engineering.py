@@ -5,8 +5,8 @@ Create technical indicators and features for ML models.
 import pandas as pd
 import numpy as np
 from typing import List, Optional, Tuple
-import sys
-sys.path.append('../..')
+
+
 
 from core.logger import get_logger
 
