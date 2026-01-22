@@ -1,5 +1,6 @@
 """
-ML Module - Machine Learning Signal Enhancement
+ML Module
+Machine learning components for trading signal prediction.
 """
 from .data_loader import KaggleDataLoader
 from .features import FeatureEngineer, prepare_ml_data
@@ -9,16 +10,16 @@ from .models import (
     RandomForestModel,
     GradientBoostingModel,
     ModelEnsemble,
-    train_all_models
+    train_all_models,
 )
-from .signal_generator import MLSignalGenerator, MLSignal, run_signal_pipeline
 
-# Optional imports
+# Conditionally import XGBoost
 try:
     from .models import XGBoostModel
 except ImportError:
     XGBoostModel = None
 
+# Conditionally import deep learning
 try:
     from .deep_learning import LSTMModel, GRUModel, DeepLearningTrainer
 except ImportError:
@@ -28,23 +29,20 @@ except ImportError:
 
 __all__ = [
     # Data
-    'KaggleDataLoader',
-    'FeatureEngineer',
-    'prepare_ml_data',
+    "KaggleDataLoader",
+    # Features
+    "FeatureEngineer",
+    "prepare_ml_data",
     # Models
-    'BaseModel',
-    'LogisticRegressionModel',
-    'RandomForestModel',
-    'GradientBoostingModel',
-    'XGBoostModel',
-    'ModelEnsemble',
-    'train_all_models',
+    "BaseModel",
+    "LogisticRegressionModel",
+    "RandomForestModel",
+    "GradientBoostingModel",
+    "XGBoostModel",
+    "ModelEnsemble",
+    "train_all_models",
     # Deep Learning
-    'LSTMModel',
-    'GRUModel',
-    'DeepLearningTrainer',
-    # Signal Generation
-    'MLSignalGenerator',
-    'MLSignal',
-    'run_signal_pipeline',
+    "LSTMModel",
+    "GRUModel",
+    "DeepLearningTrainer",
 ]

@@ -1,6 +1,16 @@
 """
 Notifications Module
+Discord and Telegram notification services.
 """
-from .telegram import TelegramNotifier
+from .discord import DiscordNotifier
 
-__all__ = ['TelegramNotifier']
+# Conditionally import Telegram
+try:
+    from .telegram import TelegramNotifier
+except ImportError:
+    TelegramNotifier = None
+
+__all__ = [
+    "DiscordNotifier",
+    "TelegramNotifier",
+]
