@@ -1,0 +1,37 @@
+# MT5Bot Dependencies
+
+# Core
+MetaTrader5>=5.0.45
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Technical Analysis
+pandas_ta>=0.3.14b
+
+# Data Sources
+yfinance>=0.2.28
+
+# Configuration
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+
+# Database
+SQLAlchemy>=2.0.0
+
+# Notifications (optional)
+python-telegram-bot>=20.0
+
+# Dashboard (optional)
+streamlit>=1.28.0
+plotly>=5.18.0
+
+# Machine Learning (optional)
+scikit-learn>=1.3.0
+joblib>=1.3.0
+
+# HTTP Requests (for news filter)
+requests>=2.31.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
