@@ -39,6 +39,22 @@ class OptimizationResult:
         for key, value in self.best_result.to_dict().items():
             print(f"  {key}: {value}")
         print("=" * 50)
+        # Multiple-testing honesty banner. Without a Deflated Sharpe Ratio (DSR)
+        # or Probability of Backtest Overfitting (PBO) correction, the "best of
+        # N" reported above is biased upward by chance alone. See REQ-P0-08 in
+        # .kiro/specs/midas-hardening/requirements.md.
+        print(
+            "\n⚠️  IN-SAMPLE OPTIMIZATION WARNING\n"
+            f"   N={self.total_combinations} trials. With this many parameter\n"
+            "   combinations the \"best\" result is substantially inflated by\n"
+            "   chance. Before trusting these parameters:\n"
+            "     • Re-validate on a held-out out-of-sample window not used\n"
+            "       during this search (purged walk-forward, REQ-P2-01).\n"
+            "     • Apply a Deflated Sharpe Ratio correction (Bailey &\n"
+            "       López de Prado 2014) and/or Probability of Backtest\n"
+            "       Overfitting (PBO).\n"
+            "   Treat the numbers above as exploratory, not as evidence of edge.\n"
+        )
     
     def to_dataframe(self) -> pd.DataFrame:
         """Convert results to DataFrame for analysis."""

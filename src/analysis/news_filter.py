@@ -114,21 +114,30 @@ class NewsFilter:
     def _parse_event(self, event_data: dict) -> Optional[NewsEvent]:
         """Parse event data into NewsEvent object."""
         try:
-            # Parse datetime from ForexFactory format
             date_str = event_data.get('date', '')
-            
-            # Handle different date formats
+            if not date_str:
+                return None
+
+            # Try common ForexFactory / faireconomy.media date formats
             event_time = None
-            for fmt in ['%Y-%m-%dT%H:%M:%S%z', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S']:
+            for fmt in ('%Y-%m-%dT%H:%M:%S%z', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S'):
                 try:
-                    event_time = datetime.strptime(date_str[:19], fmt[:len(date_str)-1] if len(fmt) > len(date_str) else fmt)
+                    event_time = datetime.strptime(date_str[:19], fmt if len(fmt) <= 19 else fmt)
                     break
                 except ValueError:
                     continue
-            
+
+            # Fallback: try pandas for flexible parsing
+            if event_time is None:
+                try:
+                    import pandas as pd
+                    event_time = pd.to_datetime(date_str).to_pydatetime().replace(tzinfo=None)
+                except Exception:
+                    return None
+
             if event_time is None:
                 return None
-            
+
             return NewsEvent(
                 title=event_data.get('title', 'Unknown Event'),
                 country=event_data.get('country', 'Unknown'),

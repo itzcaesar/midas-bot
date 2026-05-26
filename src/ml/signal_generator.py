@@ -156,6 +156,17 @@ class MLSignalGenerator:
         # Check minimum confidence
         if confidence < min_confidence:
             direction = 'HOLD'
+
+        # Pre-trade filters (REQ-P0-10): block trades during news / outside
+        # allowed sessions, matching the rule-based path.
+        filter_block_reason = None
+        if direction in ("BUY", "SELL"):
+            from analysis.pre_trade import pre_trade_filters_passed
+            allowed, reason = pre_trade_filters_passed()
+            if not allowed:
+                filter_block_reason = reason
+                direction = 'HOLD'
+                confidence = 0.0
         
         # Create probability dict
         prob_dict = {
@@ -170,6 +181,8 @@ class MLSignalGenerator:
         
         # Get top factors
         factors = self._get_signal_factors(df_features, direction)
+        if filter_block_reason:
+            factors = [filter_block_reason, *factors]
         
         return MLSignal(
             direction=direction,

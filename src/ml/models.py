@@ -37,6 +37,13 @@ except ImportError:
     XGBOOST_AVAILABLE = False
     logger.warning("xgboost not installed")
 
+try:
+    import lightgbm as lgb
+    LIGHTGBM_AVAILABLE = True
+except ImportError:
+    LIGHTGBM_AVAILABLE = False
+    logger.info("lightgbm not installed (optional)")
+
 
 class BaseModel(ABC):
     """Abstract base class for ML models."""
@@ -220,6 +227,38 @@ class BaseModel(ABC):
                 reverse=True
             ))
         return dict(enumerate(importance))
+
+    def calibrate(
+        self,
+        X_val: np.ndarray,
+        y_val: np.ndarray,
+        method: str = "isotonic",
+        scale_features: bool = True,
+    ) -> None:
+        """Calibrate predicted probabilities using a held-out validation set (REQ-P1-04).
+
+        After calibration, ``predict_proba`` returns well-calibrated probabilities
+        that can be meaningfully compared to a threshold (e.g., ``min_confidence``).
+
+        Args:
+            X_val: Validation features (must NOT overlap with training data).
+            y_val: Validation labels.
+            method: 'isotonic' (non-parametric, needs >=50 samples) or 'sigmoid'.
+            scale_features: Whether to scale features before calibration.
+        """
+        from sklearn.calibration import CalibratedClassifierCV
+
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before calibration.")
+
+        if scale_features and self.scaler:
+            X_val = self.scaler.transform(X_val)
+
+        # CalibratedClassifierCV with cv='prefit' calibrates an already-fitted model
+        calibrated = CalibratedClassifierCV(self.model, cv="prefit", method=method)
+        calibrated.fit(X_val, y_val)
+        self.model = calibrated
+        logger.info(f"{self.name} calibrated with {method} method on {len(X_val)} samples")
     
     def save(self, filename: str = None) -> str:
         """Save model to disk."""
@@ -324,8 +363,35 @@ class GradientBoostingModel(BaseModel):
         )
 
 
+class LightGBMModel(BaseModel):
+    """LightGBM classifier (REQ-P1-06). Fast, handles imbalanced data natively."""
+
+    def __init__(self, model_dir: str = "models"):
+        super().__init__("LightGBM", model_dir)
+        if not LIGHTGBM_AVAILABLE:
+            raise ImportError("lightgbm package not installed")
+
+    def _create_model(self, **kwargs):
+        return lgb.LGBMClassifier(
+            n_estimators=kwargs.get('n_estimators', 200),
+            max_depth=kwargs.get('max_depth', 8),
+            learning_rate=kwargs.get('learning_rate', 0.05),
+            subsample=kwargs.get('subsample', 0.8),
+            colsample_bytree=kwargs.get('colsample_bytree', 0.8),
+            class_weight='balanced',
+            random_state=42,
+            n_jobs=-1,
+            verbose=-1,
+        )
+
+
 class ModelEnsemble:
-    """Ensemble of multiple models."""
+    """Ensemble of multiple models with soft-vote probability averaging (REQ-P1-05).
+
+    Instead of hard-voting on class predictions, this ensemble averages the
+    calibrated probability vectors from each model and picks the argmax. This
+    ensures ``predict`` and ``predict_proba`` are always consistent.
+    """
     
     def __init__(self, models: List[BaseModel], weights: List[float] = None):
         """
@@ -333,7 +399,7 @@ class ModelEnsemble:
         
         Args:
             models: List of trained models
-            weights: Optional weights for voting (default: equal weights)
+            weights: Optional weights for averaging (default: equal weights)
         """
         self.models = models
         self.weights = weights or [1.0 / len(models)] * len(models)
@@ -341,37 +407,15 @@ class ModelEnsemble:
         if len(self.weights) != len(self.models):
             raise ValueError("Number of weights must match number of models")
     
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        """
-        Make predictions using weighted voting.
-        
-        Args:
-            X: Features
-            
-        Returns:
-            Ensemble predictions
-        """
-        predictions = np.array([model.predict(X) for model in self.models])
-        
-        # Weighted voting
-        weighted_preds = np.zeros((X.shape[0], 3))  # Assuming 3 classes: -1, 0, 1
-        
-        for i, (pred, weight) in enumerate(zip(predictions, self.weights)):
-            for j, p in enumerate(pred):
-                class_idx = int(p) + 1  # Map -1,0,1 to 0,1,2
-                weighted_preds[j, class_idx] += weight
-        
-        return np.argmax(weighted_preds, axis=1) - 1  # Map back to -1,0,1
-    
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """
-        Get ensemble probabilities.
+        Get ensemble probabilities via weighted soft-vote.
         
         Args:
             X: Features
             
         Returns:
-            Average probabilities
+            Weighted-average probability matrix (n_samples, n_classes)
         """
         all_proba = []
         for model, weight in zip(self.models, self.weights):
@@ -379,6 +423,21 @@ class ModelEnsemble:
             all_proba.append(proba * weight)
         
         return np.sum(all_proba, axis=0)
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """
+        Make predictions using soft-vote (argmax of averaged probabilities).
+        Consistent with predict_proba by construction.
+        
+        Args:
+            X: Features
+            
+        Returns:
+            Ensemble predictions (-1, 0, 1)
+        """
+        proba = self.predict_proba(X)
+        # Map column indices 0,1,2 back to class labels -1,0,1
+        return np.argmax(proba, axis=1) - 1
     
     def get_confidence(self, X: np.ndarray) -> np.ndarray:
         """
@@ -424,6 +483,9 @@ def train_all_models(
     
     if XGBOOST_AVAILABLE:
         models.append(XGBoostModel())
+
+    if LIGHTGBM_AVAILABLE:
+        models.append(LightGBMModel())
     
     for model in models:
         logger.info(f"Training {model.name}...")

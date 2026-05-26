@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pydantic-settings
+
+      - name: Lint with ruff
+        run: |
+          pip install ruff
+          ruff check src/ tests/ config/
+          ruff format --check src/ tests/ config/
+
+      - name: Run tests
+        run: |
+          pytest tests/ -q --tb=short
+        env:
+          # Prevent tests from reading the real .env
+          MT5_LOGIN: ""
+          MT5_PASSWORD: ""
+          MT5_SERVER: ""
+          DRY_RUN: "true"

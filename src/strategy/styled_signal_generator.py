@@ -2,13 +2,20 @@
 Style-Based Signal Generator
 Generate signals using trading-style-specific configurations.
 """
+import sys
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from datetime import datetime
 from typing import Dict, Optional, Tuple
 from dataclasses import dataclass
 
-sys.path.insert(0, str(__file__).replace('\\', '/').rsplit('/', 2)[0])
+# Ensure src/ is on the path when this module is run as a script (e.g. python styled_signal_generator.py).
+# When imported via the installed package, this is a no-op.
+_SRC_ROOT = Path(__file__).resolve().parents[1]
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
 
 from ml.data_loader import KaggleDataLoader
 from ml.features import FeatureEngineer
@@ -17,6 +24,21 @@ from strategy.styles import TradingStyle, StyleConfig, get_style_config, get_all
 from core.logger import get_logger
 
 logger = get_logger("mt5bot.style_signal")
+
+
+class _AlwaysAllow:
+    """Drop-in stand-in for ``SessionFilter`` that always permits trading.
+    Used when a style opts out of session filtering via ``use_session_filter=False``."""
+
+    def is_valid_session(self):
+        return True, "Style opted out of session filter"
+
+
+class _AlwaysAllowNews:
+    """Drop-in stand-in for ``NewsFilter`` that always permits trading."""
+
+    def is_safe_to_trade(self):
+        return True, "Style opted out of news filter"
 
 
 @dataclass
@@ -143,6 +165,28 @@ class StyledSignalGenerator:
         # Apply minimum confidence filter
         if confidence < config.min_confidence:
             direction = 'HOLD'
+
+        # Pre-trade filters (REQ-P0-10): respect each style's filter toggles.
+        # We mirror the per-style ``use_session_filter`` / ``use_news_filter``
+        # flags by relying on the central helper, which itself reads
+        # ``settings.session_filter_enabled`` / ``settings.news_filter_enabled``.
+        # When the style explicitly opts out, we skip the corresponding check.
+        filter_block_reason = None
+        if direction in ("BUY", "SELL"):
+            from analysis.pre_trade import pre_trade_filters_passed
+            session_inst = None
+            news_inst = None
+            if not config.use_session_filter:
+                session_inst = _AlwaysAllow()
+            if not config.use_news_filter:
+                news_inst = _AlwaysAllowNews()
+            allowed, reason = pre_trade_filters_passed(
+                session_filter=session_inst, news_filter=news_inst
+            )
+            if not allowed:
+                filter_block_reason = reason
+                direction = 'HOLD'
+                confidence = 0.0
         
         # Calculate SL/TP based on style
         atr = self._calculate_atr(df_features)
@@ -152,6 +196,8 @@ class StyledSignalGenerator:
         
         # Get factors
         factors = self._get_style_factors(df_features, direction, config)
+        if filter_block_reason:
+            factors = [filter_block_reason, *factors]
         
         # Calculate max hold time
         if config.timeframe == '5m':

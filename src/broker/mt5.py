@@ -2,6 +2,9 @@
 MT5 Manager - MetaTrader 5 Connection and Order Management
 Enhanced with logging, trailing stops, and improved error handling.
 """
+import time
+from itertools import count
+
 import MetaTrader5 as mt5
 import pandas as pd
 from datetime import datetime
@@ -15,6 +18,23 @@ from core.exceptions import ConnectionError, OrderError, SymbolError
 
 # Module logger
 logger = get_logger("mt5bot.broker")
+
+
+# Counter to keep dry-run tickets unique even when called within the same millisecond.
+# Real MT5 tickets are positive uint64; dry-run tickets are negative so they never collide.
+_DRY_RUN_TICKET_COUNTER = count(start=1)
+
+
+def _make_dry_run_ticket() -> int:
+    """Return a unique negative ticket for dry-run trades.
+
+    Real MT5 tickets are positive, so a negative value can be safely persisted in
+    the unique-indexed `trades.ticket` column without ever colliding with live trades.
+    """
+    # 13-digit base from time + monotonic counter for collision safety
+    base = int(time.time_ns() // 1_000_000) % 10**13
+    seq = next(_DRY_RUN_TICKET_COUNTER) % 1000
+    return -(base * 1000 + seq)
 
 
 class MT5Manager:
@@ -230,8 +250,9 @@ class MT5Manager:
             Order ticket number or None if failed
         """
         if settings.dry_run:
-            logger.info(f"[DRY RUN] Would place {order_type} {lot} lots on {symbol}")
-            return -1
+            ticket = _make_dry_run_ticket()
+            logger.info(f"[DRY RUN] Would place {order_type} {lot} lots on {symbol} (ticket={ticket})")
+            return ticket
         
         # Validate symbol
         symbol_info = mt5.symbol_info(symbol)
@@ -267,10 +288,11 @@ class MT5Manager:
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
         
+        sl_str = f"{sl_price:.2f}" if sl_price else "None"
+        tp_str = f"{tp_price:.2f}" if tp_price else "None"
         logger.info(
             f"Sending order: {order_type} {lot} {symbol} @ {price:.2f} "
-            f"SL: {sl_price:.2f if sl_price else 'None'} "
-            f"TP: {tp_price:.2f if tp_price else 'None'}"
+            f"SL: {sl_str} TP: {tp_str}"
         )
         
         result = mt5.order_send(request)

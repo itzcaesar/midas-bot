@@ -2,6 +2,7 @@
 XAUUSD Trading Bot - Main Entry Point
 Enhanced with logging, notifications, database persistence, and advanced filters.
 """
+import sys
 import time
 
 from datetime import datetime
@@ -17,9 +18,12 @@ from core.logger import setup_logger, TradeLogger
 from core.database import Database
 from core.exceptions import ConnectionError, OrderError
 from broker.mt5 import MT5Manager
+from broker import SimBroker
 from strategy.xauusd_strategy import XAUUSDStrategy
 from analysis import dxy
 from notifications.telegram import TelegramNotifier
+from risk import AccountState, RiskGovernor
+from reconciliation import Reconciler
 
 # Setup main logger
 logger = setup_logger("mt5bot.main", log_dir=settings.log_dir)
@@ -28,24 +32,20 @@ trade_logger = TradeLogger(settings.log_dir)
 
 def print_banner():
     """Print startup banner."""
-    banner = """
-╔══════════════════════════════════════════════════════════════╗
-║               🏆 XAUUSD TRADING BOT v2.0 🏆                  ║
-║    Strategy: Liquidity + MACD + Breakout + Structure + DXY   ║
-║              + HTF Bias + Session Filter + News              ║
-╠══════════════════════════════════════════════════════════════╣
-║  Symbol: {symbol:<10}  Timeframe: {tf:<8}  Risk: {risk}%         ║
-║  Dry Run: {dry:<8}   Session Filter: {session:<8}              ║
-║  HTF Enabled: {htf:<6}  News Filter: {news:<8}                 ║
-╚══════════════════════════════════════════════════════════════╝
-""".format(
-        symbol=settings.symbol,
-        tf=settings.timeframe,
-        risk=settings.risk_percent,
-        dry="YES" if settings.dry_run else "NO ⚠️",
-        session="ON" if settings.session_filter_enabled else "OFF",
-        htf="ON" if settings.htf_enabled else "OFF",
-        news="ON" if settings.news_filter_enabled else "OFF"
+    banner = (
+        "\n"
+        "+--------------------------------------------------------------+\n"
+        "|             XAUUSD TRADING BOT v2.0 (MIDAS)                  |\n"
+        "|  Strategy: Liquidity + MACD + Breakout + Structure + DXY     |\n"
+        "|            + HTF Bias + Session Filter + News                |\n"
+        "+--------------------------------------------------------------+\n"
+        f"|  Symbol: {settings.symbol:<10}  Timeframe: {settings.timeframe:<8}"
+        f"  Risk: {settings.risk_percent}%\n"
+        f"|  Dry Run: {'YES' if settings.dry_run else 'NO':<8}"
+        f"   Session Filter: {'ON' if settings.session_filter_enabled else 'OFF':<8}\n"
+        f"|  HTF Enabled: {'ON' if settings.htf_enabled else 'OFF':<6}"
+        f"  News Filter: {'ON' if settings.news_filter_enabled else 'OFF':<8}\n"
+        "+--------------------------------------------------------------+\n"
     )
     print(banner)
     logger.info("=" * 60)
@@ -61,22 +61,69 @@ def main():
     mt5 = MT5Manager()
     db = Database()
     notifier = TelegramNotifier()
+    governor = RiskGovernor()
     
     # Connect to MT5
+    mt5_connected = False
     try:
-        if not mt5.connect():
-            logger.error("Failed to connect to MT5. Exiting.")
-            return
+        if mt5.connect():
+            mt5_connected = True
+        else:
+            logger.error("Failed to connect to MT5.")
     except ConnectionError as e:
         logger.error(f"Connection failed: {e}")
-        return
+
+    if not mt5_connected:
+        if settings.dry_run:
+            logger.warning(
+                "MT5 not available but DRY_RUN=true. "
+                "Switching to SimBroker for offline dry-run mode."
+            )
+            # Load synthetic/historical data into SimBroker for offline operation
+            from ml.data_loader import KaggleDataLoader
+            try:
+                loader = KaggleDataLoader(data_dir="data")
+                tf_map = {"M1": "1m", "M5": "5m", "M15": "15m", "M30": "30m",
+                          "H1": "1h", "H4": "4h", "D1": "1d"}
+                tf_key = tf_map.get(settings.timeframe, "1h")
+                offline_data = loader.load_data(tf_key)
+                # Start cursor at bar 600 so there's enough warmup history
+                mt5 = SimBroker(initial_balance=10_000.0, data=offline_data, start_cursor=600)
+                logger.info(f"SimBroker loaded {len(offline_data)} bars of offline {tf_key} data")
+            except Exception as e:
+                logger.warning(f"Could not load offline data: {e}. SimBroker will have no data.")
+                mt5 = SimBroker(initial_balance=10_000.0)
+            mt5.connect()
+            mt5_connected = True
+        else:
+            logger.error("MT5 required for live trading. Exiting.")
+            return
     
     # Initialize strategy with MT5 reference for HTF data
-    strategy = XAUUSDStrategy(mt5=mt5)
-    
+    strategy = XAUUSDStrategy(mt5=mt5 if mt5_connected else None)
+
+    # Reconcile DB with broker positions in case of crash recovery (REQ-P1-09).
+    if mt5_connected:
+        try:
+            reconciler = Reconciler(broker=mt5, db=db)
+            report = reconciler.reconcile_on_startup(symbol=settings.symbol)
+            if report.has_drift or report.errors:
+                logger.warning(f"Startup reconciliation drift detected: {report}")
+                if notifier.is_enabled:
+                    notifier.send_error_alert(str(report), "Startup reconciliation")
+            else:
+                logger.info(f"Startup reconciliation clean: {report.in_sync_count} positions in sync")
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"Startup reconciliation crashed (continuing without it): {exc}")
+            if notifier.is_enabled:
+                notifier.send_error_alert(str(exc), "Reconciler")
+    else:
+        logger.info("Skipping reconciliation (MT5 not connected)")
+
     # Send startup notification
     if notifier.is_enabled:
-        notifier.send_startup_message(mt5.get_account_balance())
+        balance = mt5.get_account_balance() if mt5_connected else 0.0
+        notifier.send_startup_message(balance)
     
     try:
         while True:
@@ -129,7 +176,10 @@ def main():
                                     exit_price=xau_df['close'].iloc[-1],
                                     profit=profit
                                 )
-                                
+
+                                # Notify the governor so loss-streak / DD math stays current
+                                governor.record_trade_result(profit)
+
                                 # Log and notify
                                 trade_logger.log_exit(
                                     pos['ticket'], settings.symbol, pos['type'],
@@ -171,17 +221,42 @@ def main():
                 
                 # --- Execute Trade ---
                 if signal.direction in ["BUY", "SELL"] and signal.confidence >= settings.min_confidence:
+                    # Risk governor gate (REQ-P1-08)
+                    decision = governor.can_open(
+                        AccountState(
+                            equity=mt5.get_account_equity(),
+                            balance=mt5.get_account_balance(),
+                            open_positions=len(positions),
+                        )
+                    )
+                    if not decision.allow:
+                        logger.warning(f"Risk governor blocked order: {decision.reason}")
+                        if notifier.is_enabled:
+                            notifier.send_error_alert(
+                                f"Order blocked: {decision.reason}", "RiskGovernor"
+                            )
+                        time.sleep(settings.loop_interval_seconds)
+                        continue
+
                     current_price = xau_df['close'].iloc[-1]
                     sl_pips = abs(current_price - signal.stop_loss) / 0.1  # Convert to pips
-                    
+
                     lot_size = mt5.calculate_lot_size(settings.symbol, sl_pips)
+                    # Apply governor's soft-scale (e.g. 0.5x risk inside a drawdown)
+                    if decision.risk_scale < 1.0:
+                        original_lot = lot_size
+                        lot_size = max(0.01, round(lot_size * decision.risk_scale, 2))
+                        logger.info(
+                            f"Governor scaled lot size {original_lot} -> {lot_size} "
+                            f"({decision.reason})"
+                        )
                     tp_pips = abs(signal.take_profit - current_price) / 0.1
-                    
+
                     logger.info(f"Executing {signal.direction} order:")
                     logger.info(f"  Lot Size: {lot_size}")
                     logger.info(f"  SL: {signal.stop_loss:.2f} ({sl_pips:.0f} pips)")
                     logger.info(f"  TP: {signal.take_profit:.2f} ({tp_pips:.0f} pips)")
-                    
+
                     try:
                         ticket = mt5.place_order(
                             symbol=settings.symbol,
@@ -191,13 +266,16 @@ def main():
                             tp_price=signal.take_profit,
                             comment=f"MT5Bot {signal.htf_bias}"
                         )
-                        
+
                         if ticket:
                             logger.info(f"Order placed! Ticket: {ticket}")
-                            
+
+                            # Tell the governor an order went out so the rate limiter ticks
+                            governor.record_order_sent()
+
                             # Record in database
                             db.record_trade_entry(
-                                ticket=ticket if ticket > 0 else 0,
+                                ticket=ticket,
                                 symbol=settings.symbol,
                                 direction=signal.direction,
                                 lot_size=lot_size,
@@ -232,7 +310,10 @@ def main():
                 
                 # --- Wait for next cycle ---
                 elapsed = (datetime.now() - loop_start).total_seconds()
-                sleep_time = max(0, settings.loop_interval_seconds - elapsed)
+                # In dry-run with SimBroker, cycle fast (1s) to replay history quickly.
+                # In live mode, respect the configured interval.
+                interval = 1 if settings.dry_run and isinstance(mt5, SimBroker) else settings.loop_interval_seconds
+                sleep_time = max(0, interval - elapsed)
                 logger.debug(f"Sleeping {sleep_time:.0f}s until next cycle...")
                 time.sleep(sleep_time)
             

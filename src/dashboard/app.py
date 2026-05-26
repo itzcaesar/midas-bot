@@ -1,333 +1,265 @@
 """
-MT5Bot Performance Dashboard
-Real-time monitoring dashboard using Streamlit.
+MIDAS Performance Dashboard (REQ-P1-10).
+Real-time monitoring backed by the SQLite trade database.
 
 Run with: streamlit run src/dashboard/app.py
 """
-
+import sys
 from pathlib import Path
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
+# Add project root to path so config/ and src/ are importable
+project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
-
-# Try importing streamlit
-try:
-    import streamlit as st
-    import plotly.graph_objects as go
-    import plotly.express as px
-    STREAMLIT_AVAILABLE = True
-except ImportError:
-    STREAMLIT_AVAILABLE = False
-    print("Streamlit and/or Plotly not installed. Run: pip install streamlit plotly")
+sys.path.insert(0, str(project_root / "src"))
 
 import pandas as pd
 from datetime import datetime, timedelta
 
+try:
+    import streamlit as st
+    import plotly.graph_objects as go
+except ImportError:
+    print("Install dashboard deps: pip install streamlit plotly")
+    raise SystemExit(1)
 
-def create_dashboard():
-    """Main dashboard application."""
-    
-    if not STREAMLIT_AVAILABLE:
-        print("Please install streamlit: pip install streamlit plotly")
-        return
-    
-    # Page config
+from config import settings
+from core.database import Database, Trade, Signal
+
+
+# ---------------------------------------------------------------------------
+# Data layer — reads from the real SQLite DB
+# ---------------------------------------------------------------------------
+
+@st.cache_resource
+def get_db() -> Database:
+    """Singleton DB connection for the dashboard."""
+    return Database(db_path=settings.database_url.replace("sqlite:///", ""))
+
+
+def load_trades(db: Database, days: int = 30) -> pd.DataFrame:
+    """Load closed trades from the last N days into a DataFrame."""
+    with db.get_session() as session:
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        trades = (
+            session.query(Trade)
+            .filter(Trade.status == "CLOSED", Trade.exit_time >= cutoff)
+            .order_by(Trade.exit_time.desc())
+            .all()
+        )
+        if not trades:
+            return pd.DataFrame()
+        rows = [t.to_dict() for t in trades]
+    df = pd.DataFrame(rows)
+    for col in ("entry_time", "exit_time"):
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col])
+    return df
+
+
+def load_open_trades(db: Database) -> pd.DataFrame:
+    with db.get_session() as session:
+        trades = session.query(Trade).filter(Trade.status == "OPEN").all()
+        if not trades:
+            return pd.DataFrame()
+        return pd.DataFrame([t.to_dict() for t in trades])
+
+
+def load_signals(db: Database, days: int = 7) -> pd.DataFrame:
+    with db.get_session() as session:
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        signals = (
+            session.query(Signal)
+            .filter(Signal.timestamp >= cutoff)
+            .order_by(Signal.timestamp.desc())
+            .limit(200)
+            .all()
+        )
+        if not signals:
+            return pd.DataFrame()
+        rows = [
+            {
+                "timestamp": s.timestamp,
+                "symbol": s.symbol,
+                "timeframe": s.timeframe,
+                "direction": s.direction,
+                "confidence": s.confidence,
+                "executed": s.executed,
+            }
+            for s in signals
+        ]
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard UI
+# ---------------------------------------------------------------------------
+
+
+def main():
     st.set_page_config(
-        page_title="MT5 Trading Bot Dashboard",
+        page_title="MIDAS Dashboard",
         page_icon="📈",
         layout="wide",
-        initial_sidebar_state="expanded"
+        initial_sidebar_state="expanded",
     )
-    
-    # Custom CSS
-    st.markdown("""
-        <style>
-        .main-header {
-            font-size: 2.5rem;
-            font-weight: bold;
-            color: #1E88E5;
-        }
-        .metric-card {
-            background-color: #f0f2f6;
-            padding: 20px;
-            border-radius: 10px;
-        }
-        .profit { color: #4CAF50; }
-        .loss { color: #F44336; }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    # Header
-    st.markdown('<p class="main-header">🏆 MT5 Trading Bot Dashboard</p>', unsafe_allow_html=True)
-    
+
+    # REQ-P2-08: Simple password-based auth gate.
+    # For production, use streamlit-authenticator or reverse-proxy auth.
+    import os
+    dashboard_password = os.getenv("DASHBOARD_PASSWORD", "")
+    if dashboard_password:
+        if "authenticated" not in st.session_state:
+            st.session_state.authenticated = False
+        if not st.session_state.authenticated:
+            st.title("MIDAS Dashboard - Login")
+            pwd = st.text_input("Password", type="password")
+            if st.button("Login"):
+                if pwd == dashboard_password:
+                    st.session_state.authenticated = True
+                    st.rerun()
+                else:
+                    st.error("Invalid password")
+            return
+
+    st.title("MIDAS Trading Dashboard")
+
     # Sidebar
     with st.sidebar:
-        st.header("⚙️ Settings")
-        
-        # Date range
-        date_range = st.date_input(
-            "Date Range",
-            value=(datetime.now() - timedelta(days=30), datetime.now()),
-            max_value=datetime.now()
-        )
-        
-        st.divider()
-        
-        # Bot status
-        st.header("🤖 Bot Status")
-        status = st.selectbox("Status", ["Running", "Stopped", "Paused"])
-        
-        if status == "Running":
-            st.success("● Bot is running")
-        else:
-            st.error(f"● Bot is {status.lower()}")
-        
-        st.divider()
-        
-        # Quick actions
-        st.header("⚡ Quick Actions")
-        if st.button("🔄 Refresh Data"):
+        st.header("Settings")
+        days = st.slider("History (days)", 1, 90, 30)
+        if st.button("Refresh"):
+            st.cache_data.clear()
             st.rerun()
-        
-        if st.button("📊 Export Report"):
-            st.info("Report exported!")
-    
-    # Main content
-    # Load data (placeholder - would connect to database in real implementation)
-    balance_data = generate_sample_data()
-    
-    # Top metrics row
+        st.divider()
+        st.caption(f"DB: {settings.database_url}")
+        st.caption(f"Symbol: {settings.symbol} | TF: {settings.timeframe}")
+        st.caption(f"Dry run: {'Yes' if settings.dry_run else 'No'}")
+
+    db = get_db()
+    trades_df = load_trades(db, days=days)
+    open_df = load_open_trades(db)
+    signals_df = load_signals(db, days=days)
+
+    # --- Top metrics ---
     col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        st.metric(
-            label="💰 Balance",
-            value=f"${balance_data['current_balance']:,.2f}",
-            delta=f"{balance_data['daily_pnl']:+.2f}"
-        )
-    
-    with col2:
-        st.metric(
-            label="📊 Total Trades",
-            value=balance_data['total_trades'],
-            delta=f"+{balance_data['today_trades']} today"
-        )
-    
-    with col3:
-        st.metric(
-            label="✅ Win Rate",
-            value=f"{balance_data['win_rate']:.1%}",
-            delta=f"{balance_data['win_rate_change']:+.1%}"
-        )
-    
-    with col4:
-        st.metric(
-            label="📈 Profit Factor",
-            value=f"{balance_data['profit_factor']:.2f}",
-            delta=f"{balance_data['pf_change']:+.2f}"
-        )
-    
-    with col5:
-        st.metric(
-            label="📉 Max Drawdown",
-            value=f"{balance_data['max_drawdown']:.1%}",
-            delta=None
-        )
-    
+
+    if trades_df.empty:
+        total_pnl = 0.0
+        win_rate = 0.0
+        total_trades = 0
+        profit_factor = 0.0
+        max_dd = 0.0
+    else:
+        total_pnl = trades_df["profit"].sum()
+        wins = trades_df[trades_df["profit"] > 0]
+        losses = trades_df[trades_df["profit"] <= 0]
+        total_trades = len(trades_df)
+        win_rate = len(wins) / total_trades if total_trades else 0.0
+        gross_profit = wins["profit"].sum() if not wins.empty else 0.0
+        gross_loss = abs(losses["profit"].sum()) if not losses.empty else 0.0
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0.0
+        # Max drawdown from cumulative PnL
+        cum_pnl = trades_df.sort_values("exit_time")["profit"].cumsum()
+        peak = cum_pnl.cummax()
+        dd = (peak - cum_pnl) / (peak.replace(0, 1))
+        max_dd = dd.max() if not dd.empty else 0.0
+
+    col1.metric("Total P/L", f"${total_pnl:+,.2f}")
+    col2.metric("Trades", str(total_trades))
+    col3.metric("Win Rate", f"{win_rate:.1%}")
+    col4.metric("Profit Factor", f"{profit_factor:.2f}")
+    col5.metric("Max DD", f"{max_dd:.1%}")
+
     st.divider()
-    
-    # Charts row
-    chart_col1, chart_col2 = st.columns(2)
-    
-    with chart_col1:
-        st.subheader("📈 Equity Curve")
-        
-        # Generate sample equity curve
-        dates = pd.date_range(end=datetime.now(), periods=100, freq='D')
-        equity = generate_equity_curve(balance_data['current_balance'], 100)
-        
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=dates,
-            y=equity,
-            mode='lines',
-            name='Equity',
-            line=dict(color='#1E88E5', width=2),
-            fill='tozeroy',
-            fillcolor='rgba(30, 136, 229, 0.1)'
-        ))
-        fig.update_layout(
-            height=400,
-            margin=dict(l=0, r=0, t=30, b=0),
-            xaxis_title="Date",
-            yaxis_title="Equity ($)",
-            hovermode='x unified'
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with chart_col2:
-        st.subheader("📊 Trade Distribution")
-        
-        # Pie chart
-        labels = ['Winning Trades', 'Losing Trades']
-        values = [balance_data['winning_trades'], balance_data['losing_trades']]
-        colors = ['#4CAF50', '#F44336']
-        
-        fig = go.Figure(data=[go.Pie(
-            labels=labels,
-            values=values,
-            hole=.4,
-            marker_colors=colors
-        )])
-        fig.update_layout(
-            height=400,
-            margin=dict(l=0, r=0, t=30, b=0)
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
+
+    # --- Equity curve ---
+    chart_col, info_col = st.columns([2, 1])
+
+    with chart_col:
+        st.subheader("Equity Curve")
+        if not trades_df.empty:
+            sorted_trades = trades_df.sort_values("exit_time")
+            cum = sorted_trades["profit"].cumsum()
+            fig = go.Figure()
+            fig.add_trace(
+                go.Scatter(
+                    x=sorted_trades["exit_time"],
+                    y=cum,
+                    mode="lines",
+                    name="Cumulative P/L",
+                    line=dict(color="#1E88E5", width=2),
+                    fill="tozeroy",
+                    fillcolor="rgba(30, 136, 229, 0.1)",
+                )
+            )
+            fig.update_layout(
+                height=350,
+                margin=dict(l=0, r=0, t=10, b=0),
+                yaxis_title="Cumulative P/L ($)",
+                hovermode="x unified",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No closed trades yet. Run the bot to generate data.")
+
+    with info_col:
+        st.subheader("Open Positions")
+        if not open_df.empty:
+            st.dataframe(
+                open_df[["ticket", "symbol", "direction", "lot_size", "entry_price", "stop_loss", "take_profit"]],
+                use_container_width=True,
+                height=300,
+            )
+        else:
+            st.info("No open positions.")
+
     st.divider()
-    
-    # Recent trades table
-    st.subheader("📋 Recent Trades")
-    
-    trades_df = generate_sample_trades()
-    
-    # Apply styling
-    def color_profit(val):
-        color = 'green' if val > 0 else 'red' if val < 0 else 'gray'
-        return f'color: {color}'
-    
-    styled_df = trades_df.style.applymap(color_profit, subset=['Profit'])
-    st.dataframe(styled_df, use_container_width=True, height=300)
-    
+
+    # --- Recent trades table ---
+    st.subheader("Recent Trades")
+    if not trades_df.empty:
+        display_cols = [
+            "ticket", "symbol", "direction", "lot_size",
+            "entry_price", "exit_price", "profit", "exit_time",
+        ]
+        display_cols = [c for c in display_cols if c in trades_df.columns]
+        st.dataframe(
+            trades_df[display_cols].head(50),
+            use_container_width=True,
+            height=300,
+        )
+    else:
+        st.info("No trade history.")
+
     st.divider()
-    
-    # Bottom row - Additional charts
-    bottom_col1, bottom_col2, bottom_col3 = st.columns(3)
-    
-    with bottom_col1:
-        st.subheader("📅 Daily P/L")
-        daily_pnl = generate_daily_pnl()
-        
-        colors = ['green' if x > 0 else 'red' for x in daily_pnl['pnl']]
-        fig = go.Figure(data=[go.Bar(
-            x=daily_pnl['date'],
-            y=daily_pnl['pnl'],
-            marker_color=colors
-        )])
-        fig.update_layout(
-            height=250,
-            margin=dict(l=0, r=0, t=10, b=0)
+
+    # --- Signals log ---
+    st.subheader("Recent Signals")
+    if not signals_df.empty:
+        st.dataframe(signals_df.head(50), use_container_width=True, height=250)
+    else:
+        st.info("No signals recorded yet.")
+
+    # --- Daily P/L bar chart ---
+    if not trades_df.empty and "exit_time" in trades_df.columns:
+        st.subheader("Daily P/L")
+        daily = trades_df.copy()
+        daily["date"] = daily["exit_time"].dt.date
+        daily_pnl = daily.groupby("date")["profit"].sum().reset_index()
+        colors = ["green" if x > 0 else "red" for x in daily_pnl["profit"]]
+        fig = go.Figure(
+            data=[go.Bar(x=daily_pnl["date"], y=daily_pnl["profit"], marker_color=colors)]
         )
+        fig.update_layout(height=250, margin=dict(l=0, r=0, t=10, b=0))
         st.plotly_chart(fig, use_container_width=True)
-    
-    with bottom_col2:
-        st.subheader("⏰ Trades by Hour")
-        hours = list(range(24))
-        trade_count = [5, 3, 1, 0, 0, 2, 8, 12, 15, 18, 20, 22, 
-                       25, 28, 30, 28, 22, 18, 15, 12, 10, 8, 6, 5]
-        
-        fig = go.Figure(data=[go.Bar(x=hours, y=trade_count)])
-        fig.update_layout(
-            height=250,
-            margin=dict(l=0, r=0, t=10, b=0),
-            xaxis_title="Hour (UTC)"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with bottom_col3:
-        st.subheader("🎯 Signal Confidence")
-        confidences = [0.5, 0.6, 0.7, 0.8, 0.9]
-        win_rates = [45, 52, 61, 72, 85]
-        
-        fig = go.Figure(data=[go.Scatter(
-            x=confidences,
-            y=win_rates,
-            mode='lines+markers',
-            line=dict(color='#1E88E5')
-        )])
-        fig.update_layout(
-            height=250,
-            margin=dict(l=0, r=0, t=10, b=0),
-            xaxis_title="Confidence",
-            yaxis_title="Win Rate (%)"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
+
     # Footer
     st.divider()
-    st.caption(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | MT5Bot Dashboard v1.0")
-
-
-def generate_sample_data() -> dict:
-    """Generate sample dashboard data."""
-    return {
-        'current_balance': 12543.67,
-        'daily_pnl': 234.50,
-        'total_trades': 156,
-        'today_trades': 3,
-        'win_rate': 0.62,
-        'win_rate_change': 0.02,
-        'profit_factor': 1.85,
-        'pf_change': 0.12,
-        'max_drawdown': 0.08,
-        'winning_trades': 97,
-        'losing_trades': 59
-    }
-
-
-def generate_equity_curve(final_balance: float, periods: int) -> list:
-    """Generate sample equity curve."""
-    import numpy as np
-    
-    start = final_balance * 0.85
-    returns = np.random.normal(0.002, 0.01, periods)
-    equity = [start]
-    
-    for r in returns:
-        equity.append(equity[-1] * (1 + r))
-    
-    # Scale to end at final balance
-    scale = final_balance / equity[-1]
-    return [e * scale for e in equity]
-
-
-def generate_sample_trades() -> pd.DataFrame:
-    """Generate sample trades data."""
-    import numpy as np
-    
-    n_trades = 10
-    directions = np.random.choice(['BUY', 'SELL'], n_trades)
-    profits = np.random.normal(50, 100, n_trades)
-    
-    return pd.DataFrame({
-        'Ticket': range(10001, 10001 + n_trades),
-        'Time': pd.date_range(end=datetime.now(), periods=n_trades, freq='4H'),
-        'Symbol': ['XAUUSD'] * n_trades,
-        'Direction': directions,
-        'Lot': [0.1] * n_trades,
-        'Entry': np.random.uniform(1950, 2050, n_trades).round(2),
-        'Exit': np.random.uniform(1950, 2050, n_trades).round(2),
-        'Profit': profits.round(2)
-    })
-
-
-def generate_daily_pnl() -> pd.DataFrame:
-    """Generate sample daily P/L data."""
-    import numpy as np
-    
-    dates = pd.date_range(end=datetime.now(), periods=14, freq='D')
-    pnl = np.random.normal(50, 150, 14)
-    
-    return pd.DataFrame({
-        'date': dates,
-        'pnl': pnl.round(2)
-    })
+    st.caption(
+        f"Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+        f"MIDAS Dashboard v2.0"
+    )
 
 
 if __name__ == "__main__":
-    if STREAMLIT_AVAILABLE:
-        create_dashboard()
-    else:
-        print("Please install streamlit: pip install streamlit plotly")
+    main()

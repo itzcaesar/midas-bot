@@ -8,7 +8,7 @@ from .styles import (
     get_style_config,
     get_all_styles,
     get_style_for_timeframe,
-    TRADING_STYLES,
+    styles as TRADING_STYLES,
 )
 from .signals import (
     TradingSignal,

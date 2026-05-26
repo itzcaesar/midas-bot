@@ -21,6 +21,7 @@ env/
 .venv/
 
 # IDE
+.kiro/
 .vscode/
 .idea/
 *.swp

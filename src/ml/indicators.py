@@ -76,10 +76,10 @@ def add_adx(df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0)
     minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0)
     
-    # Smoothed values
+    # Smoothed values — use pd.Series with the DataFrame's index to maintain alignment
     atr = tr.rolling(window=period).mean()
-    plus_di = 100 * pd.Series(plus_dm).rolling(window=period).mean() / atr
-    minus_di = 100 * pd.Series(minus_dm).rolling(window=period).mean() / atr
+    plus_di = 100 * pd.Series(plus_dm, index=df.index).rolling(window=period).mean() / atr
+    minus_di = 100 * pd.Series(minus_dm, index=df.index).rolling(window=period).mean() / atr
     
     # ADX
     dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di + 1e-10)
@@ -246,21 +246,30 @@ def add_divergences(df: pd.DataFrame) -> pd.DataFrame:
 def add_market_structure(df: pd.DataFrame) -> pd.DataFrame:
     """
     Detect market structure: Higher Highs, Higher Lows, etc.
+
+    NOTE on causality: a "swing" point at bar t is, by definition, only knowable
+    after observing bar t+1. The raw detector therefore peeks one bar ahead. To
+    keep these features causal (no look-ahead leak into the ML target), we shift
+    the raw flags forward by one so the value at row t only uses information
+    available at t. See `tests/test_no_lookahead.py`.
     """
     lookback = 5
-    
-    # Swing highs and lows
-    df['swing_high'] = (
-        (df['high'] > df['high'].shift(1)) & 
+
+    # Raw (centered) swing detection — uses one future bar
+    swing_high_raw = (
+        (df['high'] > df['high'].shift(1)) &
         (df['high'] > df['high'].shift(-1))
-    ).astype(int)
-    
-    df['swing_low'] = (
-        (df['low'] < df['low'].shift(1)) & 
+    )
+    swing_low_raw = (
+        (df['low'] < df['low'].shift(1)) &
         (df['low'] < df['low'].shift(-1))
-    ).astype(int)
-    
-    # Higher highs / Lower lows
+    )
+
+    # Causal exposure: shift forward by 1 so value at t depends only on rows <= t
+    df['swing_high'] = swing_high_raw.shift(1).fillna(0).astype(int)
+    df['swing_low'] = swing_low_raw.shift(1).fillna(0).astype(int)
+
+    # Higher highs / Lower lows (already causal — compares t against t-lookback)
     rolling_high = df['high'].rolling(window=lookback).max()
     rolling_low = df['low'].rolling(window=lookback).min()
     

@@ -210,6 +210,16 @@ class SignalGenerator:
         # Apply minimum confidence filter
         if confidence < min_conf:
             direction = "HOLD"
+
+        # Pre-trade filters (REQ-P0-10)
+        filter_block_reason = None
+        if direction in ("BUY", "SELL"):
+            from analysis.pre_trade import pre_trade_filters_passed
+            allowed, reason = pre_trade_filters_passed()
+            if not allowed:
+                filter_block_reason = reason
+                direction = "HOLD"
+                confidence = 0.0
         
         # Calculate SL/TP
         atr = self._calculate_atr(df_features)
@@ -219,6 +229,8 @@ class SignalGenerator:
         
         # Get factors
         factors = self._get_factors(df_features, direction)
+        if filter_block_reason:
+            factors = [filter_block_reason, *factors]
         
         # Calculate max hold time
         timeframe_minutes = {

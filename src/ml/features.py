@@ -304,31 +304,40 @@ class FeatureEngineer:
 def prepare_ml_data(
     df: pd.DataFrame,
     target_col: str = 'target_signal',
-    test_size: float = 0.2
+    test_size: float = 0.2,
+    purge_gap: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, List[str]]:
     """
     Prepare data for ML training.
-    
+
     Args:
         df: DataFrame with features and targets
         target_col: Target column name
         test_size: Test set size ratio
-        
+        purge_gap: Number of rows to drop from the END of the train slice so the
+            forward-looking target labels of training rows cannot peek into the
+            test slice. Set this to the prediction ``horizon`` used in
+            ``add_targets`` (default 1) to guarantee a clean split.
+
     Returns:
         Tuple of (X_train, X_test, y_train, y_test, feature_names)
     """
     # Separate features and target
-    feature_cols = [col for col in df.columns if col not in 
+    feature_cols = [col for col in df.columns if col not in
                     ['open', 'high', 'low', 'close', 'volume',
                      'target_return', 'target_direction', 'target_signal']]
-    
+
     X = df[feature_cols].values
     y = df[target_col].values
-    
+
     # Time-series split (no shuffling)
     split_idx = int(len(X) * (1 - test_size))
-    
-    X_train, X_test = X[:split_idx], X[split_idx:]
-    y_train, y_test = y[:split_idx], y[split_idx:]
-    
+
+    # Purge the last `purge_gap` rows of train so its forward-shifted labels
+    # cannot reach into the test slice.
+    train_end = max(0, split_idx - max(0, int(purge_gap)))
+
+    X_train, X_test = X[:train_end], X[split_idx:]
+    y_train, y_test = y[:train_end], y[split_idx:]
+
     return X_train, X_test, y_train, y_test, feature_cols
